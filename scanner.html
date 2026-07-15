@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Scan Barcode</title>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1115;
+    --surface: #1a1d24;
+    --surface2: #232630;
+    --border: #2e323d;
+    --text: #eef0f4;
+    --muted: #8a8f9c;
+    --accent: #4f7cff;
+    --danger: #e05a5a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  #reader {
+    width: 100%;
+    max-width: 480px;
+    margin: 16px auto 0;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .hint {
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 10px;
+    padding: 0 16px;
+  }
+  .wrap { padding: 0 16px 24px; max-width: 480px; margin: 0 auto; }
+  .btn {
+    display: block;
+    width: 100%;
+    border: none;
+    border-radius: 10px;
+    padding: 13px 18px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 14px;
+  }
+  .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  #errorBox {
+    display: none;
+    margin-top: 16px;
+    padding: 12px 14px;
+    background: #3a2323;
+    border: 1px solid #5a3535;
+    border-radius: 10px;
+    font-size: 13px;
+    color: #ffb4b4;
+  }
+  #noReturnBox {
+    display: none;
+    margin: 40px 16px;
+    padding: 16px;
+    background: #3a2323;
+    border: 1px solid #5a3535;
+    border-radius: 10px;
+    font-size: 13px;
+    color: #ffb4b4;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<header><h1>📷 Scan Barcode</h1></header>
+
+<div id="noReturnBox">
+  This page needs to be opened from your stock-count app (it's missing the return link).
+</div>
+
+<div class="wrap" id="mainWrap" style="display:none;">
+  <div id="reader"></div>
+  <div class="hint">Point the camera at a barcode — you'll be sent back to the app automatically once it's read.</div>
+  <div id="errorBox"></div>
+  <button class="btn btn-secondary" onclick="goBack(null)">Cancel</button>
+</div>
+
+<script>
+  const params = new URLSearchParams(window.location.search);
+  const returnUrl = params.get('return');
+  let html5QrCode = null;
+  let handled = false;
+
+  if (!returnUrl) {
+    document.getElementById('noReturnBox').style.display = 'block';
+  } else {
+    document.getElementById('mainWrap').style.display = 'block';
+    startScan();
+  }
+
+  function startScan() {
+    html5QrCode = new Html5Qrcode("reader", {
+      formatsToSupport: [
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.CODABAR,
+        Html5QrcodeSupportedFormats.QR_CODE
+      ]
+    });
+    const config = { fps: 10, qrbox: { width: 260, height: 150 } };
+
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(function (stream) {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess)
+          .catch(function () {
+            Html5Qrcode.getCameras().then(function (cameras) {
+              if (!cameras || !cameras.length) { showError('No camera detected on this device.'); return; }
+              html5QrCode.start({ deviceId: { exact: cameras[0].id } }, config, onScanSuccess)
+                .catch(function (err) { showError(describeError(err)); });
+            }).catch(function (err) { showError(describeError(err)); });
+          });
+      })
+      .catch(function (err) { showError(describeError(err)); });
+  }
+
+  function describeError(err) {
+    const name = (err && err.name) || '';
+    if (name === 'NotAllowedError' || name === 'PermissionDeniedError') return 'Camera permission denied. Tap Allow when prompted, or check this site\'s Camera permission in your browser settings.';
+    if (name === 'NotFoundError') return 'No camera found on this device.';
+    if (name === 'NotReadableError') return 'Camera is in use by another app.';
+    return 'Camera error: ' + (name || String(err));
+  }
+
+  function showError(msg) {
+    const box = document.getElementById('errorBox');
+    box.textContent = msg;
+    box.style.display = 'block';
+  }
+
+  function onScanSuccess(decodedText) {
+    if (handled) return;
+    handled = true;
+    if (html5QrCode) {
+      html5QrCode.stop().catch(function () {}).finally(function () { goBack(decodedText); });
+    } else {
+      goBack(decodedText);
+    }
+  }
+
+  function goBack(scannedValue) {
+    if (!returnUrl) return;
+    const sep = returnUrl.indexOf('?') > -1 ? '&' : '?';
+    if (scannedValue) {
+      window.location.href = returnUrl + sep + 'scanned=' + encodeURIComponent(scannedValue) + '&t=' + Date.now();
+    } else {
+      window.location.href = returnUrl;
+    }
+  }
+</script>
+</body>
+</html>
